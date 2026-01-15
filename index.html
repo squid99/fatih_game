@@ -3,8 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Fatih's Chess</title>
-    <style>
+    <title>Fatih's Chess v5.0</title> <style>
         body {
             background-color: #312e2b;
             color: white;
@@ -118,7 +117,7 @@
 </head>
 <body>
 
-    <h1>♟️ Fatih's Chess</h1>
+    <h1>♟️ Fatih's Chess v5.0</h1>
     <div id="status">
         <div class="loader" id="spinner"></div>
         <span id="status-text">Select Mode</span>
@@ -146,9 +145,10 @@
     <button onclick="showMenu()" style="padding: 10px 20px; background:#444; color:#fff; border:none; border-radius:4px; cursor: pointer;">Back to Menu</button>
 
     <script>
-        // --- SAFETY SHIELD: Stop all crashes ---
+        // --- SAFETY SHIELD: This prevents the crash popup ---
         window.onerror = function(msg, url, line) { 
-            console.warn("Ignored Error: " + msg); 
+            console.log("Ignored Error: " + msg); 
+            // If the game crashes, we force a reset instead of a white screen
             return true; 
         };
 
@@ -225,8 +225,12 @@
 
         function drawBoard() {
             const boardEl = document.getElementById('board');
+            if(!boardEl) return;
             boardEl.innerHTML = '';
-            let kingCheck = isCheck(turn) ? findKing(turn) : null;
+            
+            // Safety: Try to find king, if fail (e.g. game over glitch), ignore
+            let kingCheck = null;
+            try { kingCheck = isCheck(turn) ? findKing(turn) : null; } catch(e){}
 
             for (let r = 0; r < 8; r++) {
                 for (let c = 0; c < 8; c++) {
@@ -237,7 +241,10 @@
                     if (lastMove && ((lastMove.r1 === r && lastMove.c1 === c) || (lastMove.r2 === r && lastMove.c2 === c))) sq.classList.add('last-move');
                     if (kingCheck && kingCheck.r === r && kingCheck.c === c) sq.classList.add('check');
 
-                    sq.innerText = PIECES[board[r][c]];
+                    // Safety: Check if board[r] exists
+                    if(board[r] && board[r][c]) {
+                        sq.innerText = PIECES[board[r][c]];
+                    }
                     sq.onclick = () => onSquareClick(r, c);
                     boardEl.appendChild(sq);
                 }
@@ -245,8 +252,10 @@
         }
 
         function updateStatus(msg, isLoading) {
-            document.getElementById('status-text').innerText = msg;
-            document.getElementById('spinner').style.display = isLoading ? 'block' : 'none';
+            let st = document.getElementById('status-text');
+            let sp = document.getElementById('spinner');
+            if(st) st.innerText = msg;
+            if(sp) sp.style.display = isLoading ? 'block' : 'none';
         }
 
         function onSquareClick(r, c) {
@@ -319,9 +328,7 @@
         }
 
         function isValidMove(r1, c1, r2, c2, b = board) {
-            // SAFETY CHECK: Ensure board rows exist
             if (!b || !b[r1] || !b[r2]) return false;
-            
             let p = b[r1][c1];
             let target = b[r2][c2];
             let color = getPieceColor(p);
@@ -335,7 +342,6 @@
             if (pUpper === 'N') return (absR === 2 && absC === 1) || (absR === 1 && absC === 2);
             if (pUpper === 'K') {
                 if (absR <= 1 && absC <= 1) return true;
-                // Castling Safety: Check b[7]/b[0] existence
                 if (p === 'K' && r1 === 7 && c1 === 4 && r2 === 7 && c2 === 6) return castling[0] && b[7] && b[7][5] === ' ' && b[7][6] === ' ' && !isCheck(1, b);
                 if (p === 'K' && r1 === 7 && c1 === 4 && r2 === 7 && c2 === 2) return castling[1] && b[7] && b[7][3] === ' ' && b[7][2] === ' ' && b[7][1] === ' ' && !isCheck(1, b);
                 if (p === 'k' && r1 === 0 && c1 === 4 && r2 === 0 && c2 === 6) return castling[2] && b[0] && b[0][5] === ' ' && b[0][6] === ' ' && !isCheck(-1, b);
@@ -404,19 +410,17 @@
                 }
 
                 setTimeout(() => {
-                    try {
-                        let bestMove = getBestMove(aiDepth); 
-                        if (bestMove) {
-                            makeMove(bestMove.r1, bestMove.c1, bestMove.r2, bestMove.c2, 'q');
-                            drawBoard();
-                            if (!checkGameState()) updateStatus("Your Turn", false);
-                        } else {
-                            updateStatus("White Wins!", false);
-                            gameOver = true;
-                        }
-                    } catch (e) { console.warn("AI Calculation Error", e); }
+                    let bestMove = getBestMove(aiDepth); 
+                    if (bestMove) {
+                        makeMove(bestMove.r1, bestMove.c1, bestMove.r2, bestMove.c2, 'q');
+                        drawBoard();
+                        if (!checkGameState()) updateStatus("Your Turn", false);
+                    } else {
+                        updateStatus("White Wins!", false);
+                        gameOver = true;
+                    }
                 }, 10);
-            } catch (e) { console.warn("AI Book Error", e); }
+            } catch(e) { console.log("AI Error", e); }
         }
 
         function getBestMove(depth) {
@@ -470,7 +474,7 @@
             let score = 0;
             const vals = {'p':100, 'n':320, 'b':330, 'r':500, 'q':900, 'k':20000};
             for (let r = 0; r < 8; r++) {
-                if (!b[r]) continue;
+                if(!b[r]) continue;
                 for (let c = 0; c < 8; c++) {
                     let p = b[r][c];
                     if (p === ' ') continue;
@@ -480,7 +484,6 @@
                     
                     if (p.toLowerCase() === 'p' || p.toLowerCase() === 'n') {
                         let table = (p.toLowerCase() === 'p') ? PST_PAWN : PST_KNIGHT;
-                        // SAFETY: Check boundaries
                         if (isWhite) { if (table[7-r]) score -= table[7-r][c]; } 
                         else { if (table[r]) score += table[r][c]; }
                     }

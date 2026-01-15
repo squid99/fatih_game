@@ -21,8 +21,8 @@
         
         #game-container {
             position: relative;
-            width: 95vw;
-            max-width: 450px;
+            width: 120vw;
+            max-width: 550px;
             aspect-ratio: 1 / 1;
         }
 
@@ -117,7 +117,7 @@
 </head>
 <body>
 
-    <h1>♟️ Fatih's Chess v5.0</h1>
+    <h1>♟️ Fatih's Chess v5.0 Made by Gemini</h1>
     <div id="status">
         <div class="loader" id="spinner"></div>
         <span id="status-text">Select Mode</span>
@@ -131,8 +131,9 @@
             <button class="menu-btn pvp-btn" onclick="startPvP()">👥 2 Player (PvP)</button>
             <div style="width: 80%; height: 1px; background: #555; margin: 15px 0;"></div>
             <h3 style="margin: 5px; color: #aaa; font-size: 1rem;">vs AI Computer</h3>
-            <button class="menu-btn" onclick="startAI(2)">Easy</button>
-            <button class="menu-btn" onclick="startAI(3)">Medium</button>
+            <button class="menu-btn" onclick="startAI(1)">Easy</button>
+            <button class="menu-btn" onclick="startAI(2)">Medium</button>
+            <button class="menu-btn" onclick="startAI(3)">Hard</button>
             <button class="menu-btn fatih-btn" onclick="startAI(5)">
                 👑 Fatih Level
                 <br>
@@ -580,4 +581,5 @@
     </script>
 </body>
 </html>
+
 

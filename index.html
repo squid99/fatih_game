@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Fatih's Chess Engine</title>
+    <title>Fatih's Chess</title>
     <style>
         body {
             background-color: #312e2b;
@@ -48,7 +48,7 @@
             text-align: center;
             width: 90%;
             max-width: 400px;
-            min-height: 24px; /* Prevents jumping */
+            min-height: 24px;
             display: flex;
             justify-content: center;
             align-items: center;
@@ -63,7 +63,7 @@
             width: 14px;
             height: 14px;
             animation: spin 1s linear infinite;
-            display: none; /* Hidden by default */
+            display: none;
         }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 
@@ -83,7 +83,7 @@
             color: white;
             border: none;
             padding: 15px 30px;
-            margin: 10px;
+            margin: 8px;
             font-size: 1.2rem;
             font-weight: bold;
             border-radius: 8px;
@@ -92,8 +92,8 @@
             transition: transform 0.1s;
         }
         .menu-btn:active { transform: scale(0.95); }
+        .pvp-btn { background: #3498db; }
         
-        /* FATIH BUTTON STYLE */
         .fatih-btn {
             background: #d63031 !important;
             border: 2px solid white !important;
@@ -123,20 +123,20 @@
     <h1>♟️ Fatih's Chess</h1>
     <div id="status">
         <div class="loader" id="spinner"></div>
-        <span id="status-text">Select Difficulty</span>
+        <span id="status-text">Select Mode</span>
     </div>
     
     <div id="game-container">
         <div id="board"></div>
         
         <div id="menu-overlay">
-            <h2 style="margin-bottom: 20px; color: #f0d9b5;">Choose Difficulty</h2>
-            
-            <button class="menu-btn" onclick="startGame(2)">Easy</button>
-            <button class="menu-btn" onclick="startGame(3)">Medium</button>
-            <button class="menu-btn" onclick="startGame(4)">Hard</button>
-            
-            <button class="menu-btn fatih-btn" onclick="startGame(5)">
+            <h2 style="margin-bottom: 20px; color: #f0d9b5;">Select Mode</h2>
+            <button class="menu-btn pvp-btn" onclick="startPvP()">👥 2 Player (PvP)</button>
+            <div style="width: 80%; height: 1px; background: #555; margin: 15px 0;"></div>
+            <h3 style="margin: 5px; color: #aaa; font-size: 1rem;">vs AI Computer</h3>
+            <button class="menu-btn" onclick="startAI(2)">Easy</button>
+            <button class="menu-btn" onclick="startAI(3)">Medium</button>
+            <button class="menu-btn fatih-btn" onclick="startAI(5)">
                 👑 Fatih Level
                 <br>
                 <span style="font-size: 0.75rem; font-weight: normal; opacity: 0.9;">(Warning: AI takes time!)</span>
@@ -148,14 +148,14 @@
     <button onclick="showMenu()" style="padding: 10px 20px; background:#444; color:#fff; border:none; border-radius:4px; cursor: pointer;">Back to Menu</button>
 
     <script>
-        // --- CRASH PREVENTER ---
+        // SAFETY PATCH: Log errors instead of crashing the UI
         window.onerror = function(msg, url, line) { 
-            console.error("Error: " + msg + " Line: " + line);
-            // Don't show alert for minor internal checks, just log it
-            return false; 
+            console.log("Ignored Error: " + msg); 
+            return true; // Prevents the popup
         };
 
         /* --- CONFIGURATION --- */
+        let gameMode = 'ai'; 
         let aiDepth = 3; 
 
         /* --- GAME STATE --- */
@@ -173,37 +173,33 @@
             ' ': ''
         };
 
-        // Standard Chess Starting Position
         const START_FEN = "rnbqkbnrpppppppp                                PPPPPPPPRNBQKBNR";
         const BOOK = {
             [START_FEN]: [ {r1:1, c1:4, r2:3, c2:4}, {r1:1, c1:2, r2:3, c2:2} ]
         };
 
-        // STRATEGY TABLES (PST) - Cleaned Up
         const PST_PAWN = [
-            [0,0,0,0,0,0,0,0], 
-            [50,50,50,50,50,50,50,50], 
-            [10,10,20,30,30,20,10,10],
-            [5,5,10,25,25,10,5,5], 
-            [0,0,0,20,20,0,0,0], 
-            [5,-5,-10,0,0,-10,-5,5],
-            [5,10,10,-20,-20,10,10,5], 
-            [0,0,0,0,0,0,0,0]
+            [0,0,0,0,0,0,0,0], [50,50,50,50,50,50,50,50], [10,10,20,30,30,20,10,10],
+            [5,5,10,25,25,10,5,5], [0,0,0,20,20,0,0,0], [5,-5,-10,0,0,-10,-5,5],
+            [5,10,10,-20,-20,10,10,5], [0,0,0,0,0,0,0,0]
         ];
         const PST_KNIGHT = [
-            [-50,-40,-30,-30,-30,-30,-40,-50], 
-            [-40,-20,0,0,0,0,-20,-40],
-            [-30,0,10,15,15,10,0,-30], 
-            [-30,5,15,20,20,15,5,-30],
-            [-30,0,15,20,20,15,0,-30], 
-            [-30,5,10,15,15,10,5,-30],
-            [-40,-20,0,5,5,0,-20,-40], 
-            [-50,-40,-30,-30,-30,-30,-40,-50]
+            [-50,-40,-30,-30,-30,-30,-40,-50], [-40,-20,0,0,0,0,-20,-40],
+            [-30,0,10,15,15,10,0,-30], [-30,5,15,20,20,15,5,-30],
+            [-30,0,15,20,20,15,0,-30], [-30,5,10,15,15,10,5,-30],
+            [-40,-20,0,5,5,0,-20,-40], [-50,-40,-30,-30,-30,-30,-40,-50]
         ];
 
         /* --- MENU --- */
-        function startGame(depth) {
+        function startAI(depth) {
+            gameMode = 'ai';
             aiDepth = depth;
+            document.getElementById('menu-overlay').style.display = 'none';
+            initGame();
+        }
+
+        function startPvP() {
+            gameMode = 'pvp';
             document.getElementById('menu-overlay').style.display = 'none';
             initGame();
         }
@@ -234,7 +230,6 @@
             drawBoard();
         }
 
-        /* --- GRAPHICS --- */
         function drawBoard() {
             const boardEl = document.getElementById('board');
             boardEl.innerHTML = '';
@@ -261,12 +256,13 @@
             document.getElementById('spinner').style.display = isLoading ? 'block' : 'none';
         }
 
-        /* --- USER INPUT --- */
         function onSquareClick(r, c) {
-            if (gameOver || turn === -1) return;
+            if (gameOver) return;
+            if (gameMode === 'ai' && turn === -1) return;
 
             if (!selectedSquare) {
-                if (getPieceColor(board[r][c]) === 'white') {
+                let pieceColor = getPieceColor(board[r][c]);
+                if ((turn === 1 && pieceColor === 'white') || (turn === -1 && pieceColor === 'black')) {
                     selectedSquare = {r, c};
                     drawBoard();
                 }
@@ -286,7 +282,7 @@
                 let tempBoard = copyBoard(board);
                 makeMoveOnBoard(tempBoard, {r1, c1, r2: r, c2: c}, true); 
                 
-                if (isCheck(1, tempBoard)) {
+                if (isCheck(turn, tempBoard)) {
                     updateStatus("Illegal: King is in Check!", false);
                     selectedSquare = null;
                     drawBoard();
@@ -294,7 +290,8 @@
                 }
 
                 let promoteTo = 'Q';
-                if (board[r1][c1] === 'P' && r === 0) {
+                let isPawn = board[r1][c1].toUpperCase() === 'P';
+                if (isPawn && (r === 0 || r === 7)) {
                     let input = prompt("Promote to? (Q, N, R, B)", "Q");
                     if (input === null) return;
                     let choice = input.toUpperCase();
@@ -307,20 +304,32 @@
 
                 if (checkGameState()) return;
 
-                let thinkMsg = "AI Thinking...";
-                if(aiDepth >= 5) thinkMsg = "👑 Fatih is thinking...";
-                
-                updateStatus(thinkMsg, true);
-                setTimeout(makeAIMove, 100);
+                if (gameMode === 'ai') {
+                    let thinkMsg = "AI Thinking...";
+                    if(aiDepth >= 5) thinkMsg = "👑 Fatih is thinking...";
+                    updateStatus(thinkMsg, true);
+                    setTimeout(makeAIMove, 100);
+                } else {
+                    updateStatus((turn === 1 ? "White" : "Black") + " to Move", false);
+                }
+
             } else {
-                selectedSquare = null;
-                drawBoard();
+                let pieceColor = getPieceColor(board[r][c]);
+                if ((turn === 1 && pieceColor === 'white') || (turn === -1 && pieceColor === 'black')) {
+                    selectedSquare = {r, c};
+                    drawBoard();
+                } else {
+                    selectedSquare = null;
+                    drawBoard();
+                }
             }
         }
 
         /* --- LOGIC ENGINE --- */
         function isValidMove(r1, c1, r2, c2, b = board) {
-            if (!b[r1] || !b[r2]) return false; // Safety Check
+            // SAFETY PATCH: Check if board exists and rows exist
+            if (!b || !b[r1] || !b[r2]) return false;
+            
             let p = b[r1][c1];
             let target = b[r2][c2];
             let color = getPieceColor(p);
@@ -334,10 +343,11 @@
             if (pUpper === 'N') return (absR === 2 && absC === 1) || (absR === 1 && absC === 2);
             if (pUpper === 'K') {
                 if (absR <= 1 && absC <= 1) return true;
-                if (p === 'K' && r1 === 7 && c1 === 4 && r2 === 7 && c2 === 6) return castling[0] && b[7][5] === ' ' && b[7][6] === ' ' && !isCheck(1, b);
-                if (p === 'K' && r1 === 7 && c1 === 4 && r2 === 7 && c2 === 2) return castling[1] && b[7][3] === ' ' && b[7][2] === ' ' && b[7][1] === ' ' && !isCheck(1, b);
-                if (p === 'k' && r1 === 0 && c1 === 4 && r2 === 0 && c2 === 6) return castling[2] && b[0][5] === ' ' && b[0][6] === ' ' && !isCheck(-1, b);
-                if (p === 'k' && r1 === 0 && c1 === 4 && r2 === 0 && c2 === 2) return castling[3] && b[0][3] === ' ' && b[0][2] === ' ' && b[0][1] === ' ' && !isCheck(-1, b);
+                // Castling Safety Checks (Ensure row 7 and 0 exist)
+                if (p === 'K' && r1 === 7 && c1 === 4 && r2 === 7 && c2 === 6) return castling[0] && b[7] && b[7][5] === ' ' && b[7][6] === ' ' && !isCheck(1, b);
+                if (p === 'K' && r1 === 7 && c1 === 4 && r2 === 7 && c2 === 2) return castling[1] && b[7] && b[7][3] === ' ' && b[7][2] === ' ' && b[7][1] === ' ' && !isCheck(1, b);
+                if (p === 'k' && r1 === 0 && c1 === 4 && r2 === 0 && c2 === 6) return castling[2] && b[0] && b[0][5] === ' ' && b[0][6] === ' ' && !isCheck(-1, b);
+                if (p === 'k' && r1 === 0 && c1 === 4 && r2 === 0 && c2 === 2) return castling[3] && b[0] && b[0][3] === ' ' && b[0][2] === ' ' && b[0][1] === ' ' && !isCheck(-1, b);
                 return false;
             }
             if (pUpper === 'R' || pUpper === 'B' || pUpper === 'Q') {
@@ -388,7 +398,6 @@
             return false;
         }
 
-        /* --- AI --- */
         function makeAIMove() {
             if (gameOver) return;
 
@@ -402,7 +411,6 @@
                 return;
             }
 
-            // Using timeout to ensure UI renders first
             setTimeout(() => {
                 let bestMove = getBestMove(aiDepth); 
                 if (bestMove) {
@@ -475,19 +483,15 @@
                     
                     if (p.toLowerCase() === 'p' || p.toLowerCase() === 'n') {
                         let table = (p.toLowerCase() === 'p') ? PST_PAWN : PST_KNIGHT;
-                        // SAFETY FIX: Ensure table[r] exists before reading
-                        if (isWhite) {
-                            if (table[7-r]) score -= table[7-r][c];
-                        } else {
-                            if (table[r]) score += table[r][c];
-                        }
+                        // SAFETY PATCH: Check boundary before reading table
+                        if (isWhite) { if (table[7-r]) score -= table[7-r][c]; } 
+                        else { if (table[r]) score += table[r][c]; }
                     }
                 }
             }
             return score;
         }
 
-        /* --- STATE UPDATER --- */
         function makeMove(r1, c1, r2, c2, promotionChoice='Q') {
             makeMoveOnBoard(board, {r1,c1,r2,c2, promotionChoice}, false);
             
@@ -506,14 +510,11 @@
         function makeMoveOnBoard(b, m, isSimulation=false) {
             let p = b[m.r1][m.c1];
             
-            // En Passant Capture
             if (p.toUpperCase() === 'P' && m.c1 !== m.c2 && b[m.r2][m.c2] === ' ') {
                 b[m.r1][m.c2] = ' '; 
             }
 
-            // Castling
             if (p === 'K' && Math.abs(m.c2 - m.c1) === 2) {
-                // SAFETY FIX: Check if b[7] exists before accessing
                 if (m.c2 === 6 && b[7]) { b[7][5] = 'R'; b[7][7] = ' '; } 
                 if (m.c2 === 2 && b[7]) { b[7][3] = 'R'; b[7][0] = ' '; } 
             }
@@ -577,5 +578,4 @@
         showMenu();
     </script>
 </body>
-
 </html>

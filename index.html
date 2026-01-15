@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Fatih's Chess Engine</title>
+    <style>
+        body {
+            background-color: #312e2b;
+            color: white;
+            font-family: 'Segoe UI', sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin: 0;
+            padding: 0;
+            height: 100vh;
+            overflow: hidden;
+            touch-action: manipulation;
+        }
+        h1 { margin: 10px 0; font-size: 1.5rem; }
+        
+        #game-container {
+            position: relative;
+            width: 95vw;
+            max-width: 450px;
+            aspect-ratio: 1 / 1;
+        }
+
+        #board {
+            display: grid;
+            grid-template-columns: repeat(8, 1fr);
+            grid-template-rows: repeat(8, 1fr);
+            width: 100%;
+            height: 100%;
+            border: 5px solid #5c4d3c;
+            user-select: none;
+            box-sizing: border-box;
+        }
+        
+        #status { 
+            margin-bottom: 15px; 
+            padding: 10px 20px; 
+            background: #262421; 
+            border-radius: 5px; 
+            font-weight: bold; 
+            color: #f0d9b5;
+            text-align: center;
+            width: 90%;
+            max-width: 400px;
+            min-height: 24px; /* Prevents jumping */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 10px;
+        }
+
+        /* --- LOADING SPINNER --- */
+        .loader {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #81b64c;
+            border-radius: 50%;
+            width: 14px;
+            height: 14px;
+            animation: spin 1s linear infinite;
+            display: none; /* Hidden by default */
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        /* --- MENU --- */
+        #menu-overlay {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.9);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 10;
+        }
+        .menu-btn {
+            background: #81b64c;
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            margin: 10px;
+            font-size: 1.2rem;
+            font-weight: bold;
+            border-radius: 8px;
+            cursor: pointer;
+            width: 220px;
+            transition: transform 0.1s;
+        }
+        .menu-btn:active { transform: scale(0.95); }
+        
+        /* FATIH BUTTON STYLE */
+        .fatih-btn {
+            background: #d63031 !important;
+            border: 2px solid white !important;
+            height: auto;
+            padding: 12px;
+        }
+
+        .square {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 2.2rem;
+            cursor: pointer;
+        }
+        @media (max-width: 600px) { .square { font-size: 1.8rem; } }
+        .white-sq { background-color: #f0d9b5; color: black; }
+        .black-sq { background-color: #b58863; color: black; }
+        .selected { background-color: #bbcB2b !important; }
+        .check { background-color: #cc3333 !important; }
+        .last-move { background-color: #aaa23a !important; }
+    </style>
+</head>
+<body>
+
+    <h1>♟️ Fatih's Chess</h1>
+    <div id="status">
+        <div class="loader" id="spinner"></div>
+        <span id="status-text">Select Difficulty</span>
+    </div>
+    
+    <div id="game-container">
+        <div id="board"></div>
+        
+        <div id="menu-overlay">
+            <h2 style="margin-bottom: 20px; color: #f0d9b5;">Choose Difficulty</h2>
+            
+            <button class="menu-btn" onclick="startGame(2)">Easy</button>
+            <button class="menu-btn" onclick="startGame(3)">Medium</button>
+            <button class="menu-btn" onclick="startGame(4)">Hard</button>
+            
+            <button class="menu-btn fatih-btn" onclick="startGame(5)">
+                👑 Fatih Level
+                <br>
+                <span style="font-size: 0.75rem; font-weight: normal; opacity: 0.9;">(Warning: AI takes time!)</span>
+            </button>
+        </div>
+    </div>
+    
+    <br>
+    <button onclick="showMenu()" style="padding: 10px 20px; background:#444; color:#fff; border:none; border-radius:4px; cursor: pointer;">Back to Menu</button>
+
+    <script>
+        window.onerror = function(msg, url, line) { alert("Error: " + msg + "\nLine: " + line); return true; };
+
+        /* --- CONFIGURATION --- */
+        let aiDepth = 3; 
+        
+        /* --- GAME STATE --- */
+        let board = [];
+        let turn = 1; 
+        let selectedSquare = null;
+        let gameOver = false;
+        let lastMove = null;
+        let castling = [true, true, true, true]; 
+        
+        // NEW: En Passant Target {r, c} - The square behind the pawn that jumped
+        let enPassantTarget = null; 
+
+        const PIECES = {
+            'P': '♙', 'R': '♖', 'N': '♘', 'B': '♗', 'Q': '♕', 'K': '♔',
+            'p': '♟', 'r': '♜', 'n': '♞', 'b': '♝', 'q': '♛', 'k': '♚',
+            ' ': ''
+        };
+
+        const START_FEN = "rnbqkbnrpppppppp                                PPPPPPPPRNBQKBNR";
+        const BOOK = {
+            [START_FEN]: [ {r1:1, c1:4, r2:3, c2:4}, {r1:1, c1:2, r2:3, c2:2} ]
+        };
+
+        const PST_PAWN = [
+            [0,0,0,0,0,0,0,0], [50,50,50,50,50,50,50,50], [10,10,20,30,30,20,10,10],
+            [5,5,10,25,25,10,5,5], [0,0,0,20,20,0,0,0], [5,-5,-10,0,0,-10,-5,5],
+            [5,10,10,-20,-20,10,10,5], [0,0,0,0,0,0,0,0]
+        ];
+        const PST_KNIGHT = [
+            [-50,-40,-30,-30,-30,-30,-40,-50], [-40,-20,0,0,0,0,-20,-40],
+            [-30,0,10,15,15,10,0,-30], [-30,5,15,20,20,15,5,-30],
+            [-30,0,15,20,20,15,0,-30], [-30,5,10,15,15,10,5,-30],
+            [-40,-20,0,5,5,0,-20,-40], [-50,-40,-30,-30,-30,-30,-40,-50]
+        ];
+
+        /* --- MENU --- */
+        function startGame(depth) {
+            aiDepth = depth;
+            document.getElementById('menu-overlay').style.display = 'none';
+            initGame();
+        }
+
+        function showMenu() {
+            document.getElementById('menu-overlay').style.display = 'flex';
+        }
+
+        /* --- INITIALIZATION --- */
+        function initGame() {
+            board = [
+                ['r','n','b','q','k','b','n','r'],
+                ['p','p','p','p','p','p','p','p'],
+                [' ',' ',' ',' ',' ',' ',' ',' '],
+                [' ',' ',' ',' ',' ',' ',' ',' '],
+                [' ',' ',' ',' ',' ',' ',' ',' '],
+                [' ',' ',' ',' ',' ',' ',' ',' '],
+                ['P','P','P','P','P','P','P','P'],
+                ['R','N','B','Q','K','B','N','R']
+            ];
+            turn = 1;
+            gameOver = false;
+            selectedSquare = null;
+            lastMove = null;
+            castling = [true, true, true, true]; 
+            enPassantTarget = null; // Reset EP
+            updateStatus("White to Move", false);
+            drawBoard();
+        }
+
+        /* --- GRAPHICS --- */
+        function drawBoard() {
+            const boardEl = document.getElementById('board');
+            boardEl.innerHTML = '';
+            let kingCheck = isCheck(turn) ? findKing(turn) : null;
+
+            for (let r = 0; r < 8; r++) {
+                for (let c = 0; c < 8; c++) {
+                    const sq = document.createElement('div');
+                    sq.className = `square ${(r + c) % 2 === 0 ? 'white-sq' : 'black-sq'}`;
+                    
+                    if (selectedSquare && selectedSquare.r === r && selectedSquare.c === c) sq.classList.add('selected');
+                    if (lastMove && ((lastMove.r1 === r && lastMove.c1 === c) || (lastMove.r2 === r && lastMove.c2 === c))) sq.classList.add('last-move');
+                    if (kingCheck && kingCheck.r === r && kingCheck.c === c) sq.classList.add('check');
+
+                    sq.innerText = PIECES[board[r][c]];
+                    sq.onclick = () => onSquareClick(r, c);
+                    boardEl.appendChild(sq);
+                }
+            }
+        }
+
+        function updateStatus(msg, isLoading) {
+            document.getElementById('status-text').innerText = msg;
+            document.getElementById('spinner').style.display = isLoading ? 'block' : 'none';
+        }
+
+        /* --- USER INPUT --- */
+        function onSquareClick(r, c) {
+            if (gameOver || turn === -1) return;
+
+            if (!selectedSquare) {
+                if (getPieceColor(board[r][c]) === 'white') {
+                    selectedSquare = {r, c};
+                    drawBoard();
+                }
+                return;
+            }
+
+            const r1 = selectedSquare.r;
+            const c1 = selectedSquare.c;
+
+            if (r1 === r && c1 === c) {
+                selectedSquare = null;
+                drawBoard();
+                return;
+            }
+
+            if (isValidMove(r1, c1, r, c)) {
+                // Illegal Move Check (Does it leave King in Check?)
+                let tempBoard = copyBoard(board);
+                // We simulate move without updating global EP to check safety
+                makeMoveOnBoard(tempBoard, {r1, c1, r2: r, c2: c}, true); 
+                
+                if (isCheck(1, tempBoard)) {
+                    updateStatus("Illegal: King is in Check!", false);
+                    selectedSquare = null;
+                    drawBoard();
+                    return;
+                }
+
+                // Promotion Popup
+                let promoteTo = 'Q';
+                if (board[r1][c1] === 'P' && r === 0) {
+                    let input = prompt("Promote to? (Q, N, R, B)", "Q");
+                    if (input === null) return;
+                    let choice = input.toUpperCase();
+                    if (['Q','N','R','B'].includes(choice)) promoteTo = choice;
+                }
+
+                makeMove(r1, c1, r, c, promoteTo);
+                selectedSquare = null;
+                drawBoard();
+
+                if (checkGameState()) return;
+
+                let thinkMsg = "AI Thinking...";
+                if(aiDepth >= 5) thinkMsg = "👑 Fatih is thinking...";
+                
+                updateStatus(thinkMsg, true);
+                setTimeout(makeAIMove, 100);
+            } else {
+                selectedSquare = null;
+                drawBoard();
+            }
+        }
+
+        /* --- LOGIC ENGINE --- */
+        function isValidMove(r1, c1, r2, c2, b = board) {
+            let p = b[r1][c1];
+            let target = b[r2][c2];
+            let color = getPieceColor(p);
+            if (color === 'none' || getPieceColor(target) === color) return false;
+
+            let dr = r2 - r1, dc = c2 - c1;
+            let absR = Math.abs(dr), absC = Math.abs(dc);
+            let pUpper = p.toUpperCase();
+
+            // Pass the current EP target to the pawn check
+            if (pUpper === 'P') return checkPawn(r1, c1, r2, c2, p, b, enPassantTarget);
+            
+            if (pUpper === 'N') return (absR === 2 && absC === 1) || (absR === 1 && absC === 2);
+            if (pUpper === 'K') {
+                if (absR <= 1 && absC <= 1) return true;
+                // Castling Logic
+                if (p === 'K' && r1 === 7 && c1 === 4 && r2 === 7 && c2 === 6) return castling[0] && b[7][5] === ' ' && b[7][6] === ' ' && !isCheck(1, b);
+                if (p === 'K' && r1 === 7 && c1 === 4 && r2 === 7 && c2 === 2) return castling[1] && b[7][3] === ' ' && b[7][2] === ' ' && b[7][1] === ' ' && !isCheck(1, b);
+                if (p === 'k' && r1 === 0 && c1 === 4 && r2 === 0 && c2 === 6) return castling[2] && b[0][5] === ' ' && b[0][6] === ' ' && !isCheck(-1, b);
+                if (p === 'k' && r1 === 0 && c1 === 4 && r2 === 0 && c2 === 2) return castling[3] && b[0][3] === ' ' && b[0][2] === ' ' && b[0][1] === ' ' && !isCheck(-1, b);
+                return false;
+            }
+            if (pUpper === 'R' || pUpper === 'B' || pUpper === 'Q') {
+                if (pUpper === 'R' && (dr !== 0 && dc !== 0)) return false;
+                if (pUpper === 'B' && (absR !== absC)) return false;
+                if (pUpper === 'Q' && (dr !== 0 && dc !== 0 && absR !== absC)) return false;
+                return isPathClear(r1, c1, r2, c2, b);
+            }
+            return false;
+        }
+
+        function checkPawn(r1, c1, r2, c2, p, b, epTarget) {
+            let forward = (p === 'P') ? -1 : 1;
+            let startRow = (p === 'P') ? 6 : 1;
+            let dr = r2 - r1, dc = c2 - c1;
+
+            // 1. Move Forward
+            if (dc === 0 && dr === forward && b[r2][c2] === ' ') return true;
+            // 2. Double Move
+            if (dc === 0 && dr === forward * 2 && r1 === startRow && b[r2][c2] === ' ' && b[r1+forward][c1] === ' ') return true;
+            
+            // 3. Capture
+            if (Math.abs(dc) === 1 && dr === forward) {
+                // Normal Capture
+                if (getPieceColor(b[r2][c2]) !== 'none') return true;
+                // En Passant Capture
+                if (epTarget && r2 === epTarget.r && c2 === epTarget.c) return true;
+            }
+            
+            return false;
+        }
+
+        function isPathClear(r1, c1, r2, c2, b) {
+            let stepR = Math.sign(r2 - r1), stepC = Math.sign(c2 - c1);
+            let curr = r1 + stepR, curc = c1 + stepC;
+            while (curr !== r2 || curc !== c2) {
+                if (b[curr][curc] !== ' ') return false;
+                curr += stepR; curc += stepC;
+            }
+            return true;
+        }
+
+        function isCheck(playerTurn, b = board) {
+            let king = findKing(playerTurn, b);
+            if (!king) return true;
+            let enemyColor = (playerTurn === 1) ? 'black' : 'white';
+            for (let r = 0; r < 8; r++) {
+                for (let c = 0; c < 8; c++) {
+                    if (getPieceColor(b[r][c]) === enemyColor) {
+                        if (isValidMove(r, c, king.r, king.c, b)) return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        /* --- AI --- */
+        function makeAIMove() {
+            if (gameOver) return;
+
+            let boardKey = board.map(r => r.join('')).join('');
+            if (BOOK[boardKey]) {
+                let moves = BOOK[boardKey];
+                let m = moves[Math.floor(Math.random() * moves.length)];
+                makeMove(m.r1, m.c1, m.r2, m.c2);
+                drawBoard();
+                if (!checkGameState()) updateStatus("Your Turn", false);
+                return;
+            }
+
+            let bestMove = getBestMove(aiDepth); 
+            if (bestMove) {
+                makeMove(bestMove.r1, bestMove.c1, bestMove.r2, bestMove.c2, 'q');
+                drawBoard();
+                if (!checkGameState()) updateStatus("Your Turn", false);
+            } else {
+                updateStatus("White Wins!", false);
+                gameOver = true;
+            }
+        }
+
+        function getBestMove(depth) {
+            let moves = generateAllMoves('black', board);
+            let bestScore = -Infinity;
+            let bestMoves = [];
+
+            for (let m of moves) {
+                let temp = copyBoard(board);
+                makeMoveOnBoard(temp, m, true); // Simulate
+                let score = minimax(temp, depth - 1, false, -Infinity, Infinity);
+                if (score > bestScore) { bestScore = score; bestMoves = [m]; }
+                else if (score === bestScore) { bestMoves.push(m); }
+            }
+            return bestMoves.length > 0 ? bestMoves[Math.floor(Math.random() * bestMoves.length)] : null;
+        }
+
+        function minimax(b, depth, isMax, alpha, beta) {
+            if (depth === 0) return evaluateBoard(b);
+            let turnColor = isMax ? 'black' : 'white';
+            let moves = generateAllMoves(turnColor, b);
+            if (moves.length === 0) return isCheck(turnColor === 'white' ? 1 : -1, b) ? (isMax ? -10000 : 10000) : 0;
+
+            if (isMax) {
+                let maxEval = -Infinity;
+                for (let m of moves) {
+                    let temp = copyBoard(b);
+                    makeMoveOnBoard(temp, m, true);
+                    let eval = minimax(temp, depth - 1, false, alpha, beta);
+                    maxEval = Math.max(maxEval, eval);
+                    alpha = Math.max(alpha, eval);
+                    if (beta <= alpha) break;
+                }
+                return maxEval;
+            } else {
+                let minEval = Infinity;
+                for (let m of moves) {
+                    let temp = copyBoard(b);
+                    makeMoveOnBoard(temp, m, true);
+                    let eval = minimax(temp, depth - 1, true, alpha, beta);
+                    minEval = Math.min(minEval, eval);
+                    beta = Math.min(beta, eval);
+                    if (beta <= alpha) break;
+                }
+                return minEval;
+            }
+        }
+
+        function evaluateBoard(b) {
+            let score = 0;
+            const vals = {'p':100, 'n':320, 'b':330, 'r':500, 'q':900, 'k':20000};
+            for (let r = 0; r < 8; r++) {
+                for (let c = 0; c < 8; c++) {
+                    let p = b[r][c];
+                    if (p === ' ') continue;
+                    let val = vals[p.toLowerCase()];
+                    let isWhite = (p === p.toUpperCase());
+                    if (isWhite) score -= val; else score += val;
+                    if (p.toLowerCase() === 'p' || p.toLowerCase() === 'n') {
+                        let table = (p.toLowerCase() === 'p') ? PST_PAWN : PST_KNIGHT;
+                        let posVal = isWhite ? table[7-r][c] : table[r][c];
+                        if (isWhite) score -= posVal; else score += posVal;
+                    }
+                }
+            }
+            return score;
+        }
+
+        /* --- STATE UPDATER --- */
+        function makeMove(r1, c1, r2, c2, promotionChoice='Q') {
+            let isSimulation = false;
+            // 1. Update Board
+            makeMoveOnBoard(board, {r1,c1,r2,c2, promotionChoice}, isSimulation);
+            
+            // 2. Handle En Passant Logic (Only for REAL moves)
+            let p = board[r2][c2];
+            let isPawn = p.toUpperCase() === 'P';
+            
+            if (isPawn && Math.abs(r2 - r1) === 2) {
+                // Set target square behind the pawn
+                enPassantTarget = { r: (r1 + r2) / 2, c: c1 };
+            } else {
+                enPassantTarget = null; // Reset if not a double pawn move
+            }
+
+            lastMove = {r1,c1,r2,c2};
+            turn *= -1;
+        }
+
+        function makeMoveOnBoard(b, m, isSimulation=false) {
+            let p = b[m.r1][m.c1];
+            
+            // Handle En Passant Capture (Remove the enemy pawn)
+            if (p.toUpperCase() === 'P' && m.c1 !== m.c2 && b[m.r2][m.c2] === ' ') {
+                // If we are moving diagonally to empty square -> It's En Passant!
+                // Captured pawn is at {r1, c2}
+                b[m.r1][m.c2] = ' '; 
+            }
+
+            // Handle Castling (Move Rook)
+            if (p === 'K' && Math.abs(m.c2 - m.c1) === 2) {
+                if (m.c2 === 6) { b[7][5] = 'R'; b[7][7] = ' '; } 
+                if (m.c2 === 2) { b[7][3] = 'R'; b[7][0] = ' '; } 
+            }
+            if (p === 'k' && Math.abs(m.c2 - m.c1) === 2) {
+                if (m.c2 === 6) { b[0][5] = 'r'; b[0][7] = ' '; } 
+                if (m.c2 === 2) { b[0][3] = 'r'; b[0][0] = ' '; } 
+            }
+            
+            // Update Rights (Only if real board)
+            if (!isSimulation && b === board) { 
+                if (p === 'K') { castling[0] = false; castling[1] = false; }
+                if (p === 'R' && m.r1 === 7 && m.c1 === 7) castling[0] = false;
+                if (p === 'R' && m.r1 === 7 && m.c1 === 0) castling[1] = false;
+                if (p === 'k') { castling[2] = false; castling[3] = false; }
+                if (p === 'r' && m.r1 === 0 && m.c1 === 7) castling[2] = false;
+                if (p === 'r' && m.r1 === 0 && m.c1 === 0) castling[3] = false;
+            }
+            
+            // Promotion
+            let promoteChar = m.promotionChoice || 'Q';
+            if (p === 'P' && m.r2 === 0) p = promoteChar.toUpperCase();
+            if (p === 'p' && m.r2 === 7) p = promoteChar.toLowerCase();
+            
+            b[m.r2][m.c2] = p;
+            b[m.r1][m.c1] = ' ';
+        }
+
+        function generateAllMoves(color, b) {
+            let moves = [];
+            for (let r1 = 0; r1 < 8; r1++) {
+                for (let c1 = 0; c1 < 8; c1++) {
+                    if (getPieceColor(b[r1][c1]) === color) {
+                        for (let r2 = 0; r2 < 8; r2++) {
+                            for (let c2 = 0; c2 < 8; c2++) {
+                                // For simulation, we assume current EP target is valid
+                                // (A simplification, but works for depth 1-3)
+                                if (isValidMove(r1, c1, r2, c2, b)) {
+                                    let temp = copyBoard(b);
+                                    makeMoveOnBoard(temp, {r1,c1,r2,c2}, true);
+                                    if (!isCheck(color === 'white' ? 1 : -1, temp)) moves.push({r1, c1, r2, c2});
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            return moves;
+        }
+
+        function checkGameState() {
+            let moves = generateAllMoves(turn === 1 ? 'white' : 'black', board);
+            if (moves.length === 0) {
+                if (isCheck(turn)) updateStatus((turn === 1 ? "Black" : "White") + " Wins!", false);
+                else updateStatus("Stalemate!", false);
+                gameOver = true;
+                return true;
+            }
+            return false;
+        }
+
+        function getPieceColor(p) { if (p === ' ') return 'none'; return (p === p.toUpperCase()) ? 'white' : 'black'; }
+        function findKing(player, b) { let target = (player === 1) ? 'K' : 'k'; for (let r = 0; r < 8; r++) { for (let c = 0; c < 8; c++) { if (b[r][c] === target) return {r, c}; } } return null; }
+        function copyBoard(b) { return b.map(row => [...row]); }
+
+        showMenu();
+    </script>
+</body>
+</html>

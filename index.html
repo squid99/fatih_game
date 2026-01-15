@@ -55,7 +55,6 @@
             gap: 10px;
         }
 
-        /* --- LOADING SPINNER --- */
         .loader {
             border: 3px solid #f3f3f3;
             border-top: 3px solid #81b64c;
@@ -67,7 +66,6 @@
         }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 
-        /* --- MENU --- */
         #menu-overlay {
             position: absolute;
             top: 0; left: 0; width: 100%; height: 100%;
@@ -148,17 +146,14 @@
     <button onclick="showMenu()" style="padding: 10px 20px; background:#444; color:#fff; border:none; border-radius:4px; cursor: pointer;">Back to Menu</button>
 
     <script>
-        // SAFETY PATCH: Log errors instead of crashing the UI
+        // --- SAFETY SHIELD: Stop all crashes ---
         window.onerror = function(msg, url, line) { 
-            console.log("Ignored Error: " + msg); 
-            return true; // Prevents the popup
+            console.warn("Ignored Error: " + msg); 
+            return true; 
         };
 
-        /* --- CONFIGURATION --- */
         let gameMode = 'ai'; 
         let aiDepth = 3; 
-
-        /* --- GAME STATE --- */
         let board = [];
         let turn = 1; 
         let selectedSquare = null;
@@ -190,7 +185,6 @@
             [-40,-20,0,5,5,0,-20,-40], [-50,-40,-30,-30,-30,-30,-40,-50]
         ];
 
-        /* --- MENU --- */
         function startAI(depth) {
             gameMode = 'ai';
             aiDepth = depth;
@@ -208,7 +202,6 @@
             document.getElementById('menu-overlay').style.display = 'flex';
         }
 
-        /* --- INITIALIZATION --- */
         function initGame() {
             board = [
                 ['r','n','b','q','k','b','n','r'],
@@ -325,9 +318,8 @@
             }
         }
 
-        /* --- LOGIC ENGINE --- */
         function isValidMove(r1, c1, r2, c2, b = board) {
-            // SAFETY PATCH: Check if board exists and rows exist
+            // SAFETY CHECK: Ensure board rows exist
             if (!b || !b[r1] || !b[r2]) return false;
             
             let p = b[r1][c1];
@@ -343,7 +335,7 @@
             if (pUpper === 'N') return (absR === 2 && absC === 1) || (absR === 1 && absC === 2);
             if (pUpper === 'K') {
                 if (absR <= 1 && absC <= 1) return true;
-                // Castling Safety Checks (Ensure row 7 and 0 exist)
+                // Castling Safety: Check b[7]/b[0] existence
                 if (p === 'K' && r1 === 7 && c1 === 4 && r2 === 7 && c2 === 6) return castling[0] && b[7] && b[7][5] === ' ' && b[7][6] === ' ' && !isCheck(1, b);
                 if (p === 'K' && r1 === 7 && c1 === 4 && r2 === 7 && c2 === 2) return castling[1] && b[7] && b[7][3] === ' ' && b[7][2] === ' ' && b[7][1] === ' ' && !isCheck(1, b);
                 if (p === 'k' && r1 === 0 && c1 === 4 && r2 === 0 && c2 === 6) return castling[2] && b[0] && b[0][5] === ' ' && b[0][6] === ' ' && !isCheck(-1, b);
@@ -400,28 +392,31 @@
 
         function makeAIMove() {
             if (gameOver) return;
-
-            let boardKey = board.map(r => r.join('')).join('');
-            if (BOOK[boardKey]) {
-                let moves = BOOK[boardKey];
-                let m = moves[Math.floor(Math.random() * moves.length)];
-                makeMove(m.r1, m.c1, m.r2, m.c2);
-                drawBoard();
-                if (!checkGameState()) updateStatus("Your Turn", false);
-                return;
-            }
-
-            setTimeout(() => {
-                let bestMove = getBestMove(aiDepth); 
-                if (bestMove) {
-                    makeMove(bestMove.r1, bestMove.c1, bestMove.r2, bestMove.c2, 'q');
+            try {
+                let boardKey = board.map(r => r.join('')).join('');
+                if (BOOK[boardKey]) {
+                    let moves = BOOK[boardKey];
+                    let m = moves[Math.floor(Math.random() * moves.length)];
+                    makeMove(m.r1, m.c1, m.r2, m.c2);
                     drawBoard();
                     if (!checkGameState()) updateStatus("Your Turn", false);
-                } else {
-                    updateStatus("White Wins!", false);
-                    gameOver = true;
+                    return;
                 }
-            }, 10);
+
+                setTimeout(() => {
+                    try {
+                        let bestMove = getBestMove(aiDepth); 
+                        if (bestMove) {
+                            makeMove(bestMove.r1, bestMove.c1, bestMove.r2, bestMove.c2, 'q');
+                            drawBoard();
+                            if (!checkGameState()) updateStatus("Your Turn", false);
+                        } else {
+                            updateStatus("White Wins!", false);
+                            gameOver = true;
+                        }
+                    } catch (e) { console.warn("AI Calculation Error", e); }
+                }, 10);
+            } catch (e) { console.warn("AI Book Error", e); }
         }
 
         function getBestMove(depth) {
@@ -471,9 +466,11 @@
         }
 
         function evaluateBoard(b) {
+            if (!b) return 0;
             let score = 0;
             const vals = {'p':100, 'n':320, 'b':330, 'r':500, 'q':900, 'k':20000};
             for (let r = 0; r < 8; r++) {
+                if (!b[r]) continue;
                 for (let c = 0; c < 8; c++) {
                     let p = b[r][c];
                     if (p === ' ') continue;
@@ -483,7 +480,7 @@
                     
                     if (p.toLowerCase() === 'p' || p.toLowerCase() === 'n') {
                         let table = (p.toLowerCase() === 'p') ? PST_PAWN : PST_KNIGHT;
-                        // SAFETY PATCH: Check boundary before reading table
+                        // SAFETY: Check boundaries
                         if (isWhite) { if (table[7-r]) score -= table[7-r][c]; } 
                         else { if (table[r]) score += table[r][c]; }
                     }
@@ -508,6 +505,7 @@
         }
 
         function makeMoveOnBoard(b, m, isSimulation=false) {
+            if (!b || !b[m.r1]) return;
             let p = b[m.r1][m.c1];
             
             if (p.toUpperCase() === 'P' && m.c1 !== m.c2 && b[m.r2][m.c2] === ' ') {

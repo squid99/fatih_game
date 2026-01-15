@@ -148,11 +148,16 @@
     <button onclick="showMenu()" style="padding: 10px 20px; background:#444; color:#fff; border:none; border-radius:4px; cursor: pointer;">Back to Menu</button>
 
     <script>
-        window.onerror = function(msg, url, line) { alert("Error: " + msg + "\nLine: " + line); return true; };
+        // --- CRASH PREVENTER ---
+        window.onerror = function(msg, url, line) { 
+            console.error("Error: " + msg + " Line: " + line);
+            // Don't show alert for minor internal checks, just log it
+            return false; 
+        };
 
         /* --- CONFIGURATION --- */
         let aiDepth = 3; 
-        
+
         /* --- GAME STATE --- */
         let board = [];
         let turn = 1; 
@@ -160,8 +165,6 @@
         let gameOver = false;
         let lastMove = null;
         let castling = [true, true, true, true]; 
-        
-        // NEW: En Passant Target {r, c} - The square behind the pawn that jumped
         let enPassantTarget = null; 
 
         const PIECES = {
@@ -170,21 +173,32 @@
             ' ': ''
         };
 
+        // Standard Chess Starting Position
         const START_FEN = "rnbqkbnrpppppppp                                PPPPPPPPRNBQKBNR";
         const BOOK = {
             [START_FEN]: [ {r1:1, c1:4, r2:3, c2:4}, {r1:1, c1:2, r2:3, c2:2} ]
         };
 
+        // STRATEGY TABLES (PST) - Cleaned Up
         const PST_PAWN = [
-            [0,0,0,0,0,0,0,0], [50,50,50,50,50,50,50,50], [10,10,20,30,30,20,10,10],
-            [5,5,10,25,25,10,5,5], [0,0,0,20,20,0,0,0], [5,-5,-10,0,0,-10,-5,5],
-            [5,10,10,-20,-20,10,10,5], [0,0,0,0,0,0,0,0]
+            [0,0,0,0,0,0,0,0], 
+            [50,50,50,50,50,50,50,50], 
+            [10,10,20,30,30,20,10,10],
+            [5,5,10,25,25,10,5,5], 
+            [0,0,0,20,20,0,0,0], 
+            [5,-5,-10,0,0,-10,-5,5],
+            [5,10,10,-20,-20,10,10,5], 
+            [0,0,0,0,0,0,0,0]
         ];
         const PST_KNIGHT = [
-            [-50,-40,-30,-30,-30,-30,-40,-50], [-40,-20,0,0,0,0,-20,-40],
-            [-30,0,10,15,15,10,0,-30], [-30,5,15,20,20,15,5,-30],
-            [-30,0,15,20,20,15,0,-30], [-30,5,10,15,15,10,5,-30],
-            [-40,-20,0,5,5,0,-20,-40], [-50,-40,-30,-30,-30,-30,-40,-50]
+            [-50,-40,-30,-30,-30,-30,-40,-50], 
+            [-40,-20,0,0,0,0,-20,-40],
+            [-30,0,10,15,15,10,0,-30], 
+            [-30,5,15,20,20,15,5,-30],
+            [-30,0,15,20,20,15,0,-30], 
+            [-30,5,10,15,15,10,5,-30],
+            [-40,-20,0,5,5,0,-20,-40], 
+            [-50,-40,-30,-30,-30,-30,-40,-50]
         ];
 
         /* --- MENU --- */
@@ -215,7 +229,7 @@
             selectedSquare = null;
             lastMove = null;
             castling = [true, true, true, true]; 
-            enPassantTarget = null; // Reset EP
+            enPassantTarget = null;
             updateStatus("White to Move", false);
             drawBoard();
         }
@@ -269,9 +283,7 @@
             }
 
             if (isValidMove(r1, c1, r, c)) {
-                // Illegal Move Check (Does it leave King in Check?)
                 let tempBoard = copyBoard(board);
-                // We simulate move without updating global EP to check safety
                 makeMoveOnBoard(tempBoard, {r1, c1, r2: r, c2: c}, true); 
                 
                 if (isCheck(1, tempBoard)) {
@@ -281,7 +293,6 @@
                     return;
                 }
 
-                // Promotion Popup
                 let promoteTo = 'Q';
                 if (board[r1][c1] === 'P' && r === 0) {
                     let input = prompt("Promote to? (Q, N, R, B)", "Q");
@@ -309,6 +320,7 @@
 
         /* --- LOGIC ENGINE --- */
         function isValidMove(r1, c1, r2, c2, b = board) {
+            if (!b[r1] || !b[r2]) return false; // Safety Check
             let p = b[r1][c1];
             let target = b[r2][c2];
             let color = getPieceColor(p);
@@ -318,13 +330,10 @@
             let absR = Math.abs(dr), absC = Math.abs(dc);
             let pUpper = p.toUpperCase();
 
-            // Pass the current EP target to the pawn check
             if (pUpper === 'P') return checkPawn(r1, c1, r2, c2, p, b, enPassantTarget);
-            
             if (pUpper === 'N') return (absR === 2 && absC === 1) || (absR === 1 && absC === 2);
             if (pUpper === 'K') {
                 if (absR <= 1 && absC <= 1) return true;
-                // Castling Logic
                 if (p === 'K' && r1 === 7 && c1 === 4 && r2 === 7 && c2 === 6) return castling[0] && b[7][5] === ' ' && b[7][6] === ' ' && !isCheck(1, b);
                 if (p === 'K' && r1 === 7 && c1 === 4 && r2 === 7 && c2 === 2) return castling[1] && b[7][3] === ' ' && b[7][2] === ' ' && b[7][1] === ' ' && !isCheck(1, b);
                 if (p === 'k' && r1 === 0 && c1 === 4 && r2 === 0 && c2 === 6) return castling[2] && b[0][5] === ' ' && b[0][6] === ' ' && !isCheck(-1, b);
@@ -345,19 +354,13 @@
             let startRow = (p === 'P') ? 6 : 1;
             let dr = r2 - r1, dc = c2 - c1;
 
-            // 1. Move Forward
             if (dc === 0 && dr === forward && b[r2][c2] === ' ') return true;
-            // 2. Double Move
             if (dc === 0 && dr === forward * 2 && r1 === startRow && b[r2][c2] === ' ' && b[r1+forward][c1] === ' ') return true;
             
-            // 3. Capture
             if (Math.abs(dc) === 1 && dr === forward) {
-                // Normal Capture
                 if (getPieceColor(b[r2][c2]) !== 'none') return true;
-                // En Passant Capture
                 if (epTarget && r2 === epTarget.r && c2 === epTarget.c) return true;
             }
-            
             return false;
         }
 
@@ -399,15 +402,18 @@
                 return;
             }
 
-            let bestMove = getBestMove(aiDepth); 
-            if (bestMove) {
-                makeMove(bestMove.r1, bestMove.c1, bestMove.r2, bestMove.c2, 'q');
-                drawBoard();
-                if (!checkGameState()) updateStatus("Your Turn", false);
-            } else {
-                updateStatus("White Wins!", false);
-                gameOver = true;
-            }
+            // Using timeout to ensure UI renders first
+            setTimeout(() => {
+                let bestMove = getBestMove(aiDepth); 
+                if (bestMove) {
+                    makeMove(bestMove.r1, bestMove.c1, bestMove.r2, bestMove.c2, 'q');
+                    drawBoard();
+                    if (!checkGameState()) updateStatus("Your Turn", false);
+                } else {
+                    updateStatus("White Wins!", false);
+                    gameOver = true;
+                }
+            }, 10);
         }
 
         function getBestMove(depth) {
@@ -417,7 +423,7 @@
 
             for (let m of moves) {
                 let temp = copyBoard(board);
-                makeMoveOnBoard(temp, m, true); // Simulate
+                makeMoveOnBoard(temp, m, true);
                 let score = minimax(temp, depth - 1, false, -Infinity, Infinity);
                 if (score > bestScore) { bestScore = score; bestMoves = [m]; }
                 else if (score === bestScore) { bestMoves.push(m); }
@@ -466,10 +472,15 @@
                     let val = vals[p.toLowerCase()];
                     let isWhite = (p === p.toUpperCase());
                     if (isWhite) score -= val; else score += val;
+                    
                     if (p.toLowerCase() === 'p' || p.toLowerCase() === 'n') {
                         let table = (p.toLowerCase() === 'p') ? PST_PAWN : PST_KNIGHT;
-                        let posVal = isWhite ? table[7-r][c] : table[r][c];
-                        if (isWhite) score -= posVal; else score += posVal;
+                        // SAFETY FIX: Ensure table[r] exists before reading
+                        if (isWhite) {
+                            if (table[7-r]) score -= table[7-r][c];
+                        } else {
+                            if (table[r]) score += table[r][c];
+                        }
                     }
                 }
             }
@@ -478,19 +489,14 @@
 
         /* --- STATE UPDATER --- */
         function makeMove(r1, c1, r2, c2, promotionChoice='Q') {
-            let isSimulation = false;
-            // 1. Update Board
-            makeMoveOnBoard(board, {r1,c1,r2,c2, promotionChoice}, isSimulation);
+            makeMoveOnBoard(board, {r1,c1,r2,c2, promotionChoice}, false);
             
-            // 2. Handle En Passant Logic (Only for REAL moves)
             let p = board[r2][c2];
             let isPawn = p.toUpperCase() === 'P';
-            
             if (isPawn && Math.abs(r2 - r1) === 2) {
-                // Set target square behind the pawn
                 enPassantTarget = { r: (r1 + r2) / 2, c: c1 };
             } else {
-                enPassantTarget = null; // Reset if not a double pawn move
+                enPassantTarget = null;
             }
 
             lastMove = {r1,c1,r2,c2};
@@ -500,24 +506,22 @@
         function makeMoveOnBoard(b, m, isSimulation=false) {
             let p = b[m.r1][m.c1];
             
-            // Handle En Passant Capture (Remove the enemy pawn)
+            // En Passant Capture
             if (p.toUpperCase() === 'P' && m.c1 !== m.c2 && b[m.r2][m.c2] === ' ') {
-                // If we are moving diagonally to empty square -> It's En Passant!
-                // Captured pawn is at {r1, c2}
                 b[m.r1][m.c2] = ' '; 
             }
 
-            // Handle Castling (Move Rook)
+            // Castling
             if (p === 'K' && Math.abs(m.c2 - m.c1) === 2) {
-                if (m.c2 === 6) { b[7][5] = 'R'; b[7][7] = ' '; } 
-                if (m.c2 === 2) { b[7][3] = 'R'; b[7][0] = ' '; } 
+                // SAFETY FIX: Check if b[7] exists before accessing
+                if (m.c2 === 6 && b[7]) { b[7][5] = 'R'; b[7][7] = ' '; } 
+                if (m.c2 === 2 && b[7]) { b[7][3] = 'R'; b[7][0] = ' '; } 
             }
             if (p === 'k' && Math.abs(m.c2 - m.c1) === 2) {
-                if (m.c2 === 6) { b[0][5] = 'r'; b[0][7] = ' '; } 
-                if (m.c2 === 2) { b[0][3] = 'r'; b[0][0] = ' '; } 
+                if (m.c2 === 6 && b[0]) { b[0][5] = 'r'; b[0][7] = ' '; } 
+                if (m.c2 === 2 && b[0]) { b[0][3] = 'r'; b[0][0] = ' '; } 
             }
             
-            // Update Rights (Only if real board)
             if (!isSimulation && b === board) { 
                 if (p === 'K') { castling[0] = false; castling[1] = false; }
                 if (p === 'R' && m.r1 === 7 && m.c1 === 7) castling[0] = false;
@@ -527,7 +531,6 @@
                 if (p === 'r' && m.r1 === 0 && m.c1 === 0) castling[3] = false;
             }
             
-            // Promotion
             let promoteChar = m.promotionChoice || 'Q';
             if (p === 'P' && m.r2 === 0) p = promoteChar.toUpperCase();
             if (p === 'p' && m.r2 === 7) p = promoteChar.toLowerCase();
@@ -543,8 +546,6 @@
                     if (getPieceColor(b[r1][c1]) === color) {
                         for (let r2 = 0; r2 < 8; r2++) {
                             for (let c2 = 0; c2 < 8; c2++) {
-                                // For simulation, we assume current EP target is valid
-                                // (A simplification, but works for depth 1-3)
                                 if (isValidMove(r1, c1, r2, c2, b)) {
                                     let temp = copyBoard(b);
                                     makeMoveOnBoard(temp, {r1,c1,r2,c2}, true);
@@ -576,4 +577,5 @@
         showMenu();
     </script>
 </body>
+
 </html>
